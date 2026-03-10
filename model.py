@@ -7,6 +7,30 @@ from feature_extraction import BioMedCLIPEncoder
 from dual_gating_attention import DualGatingModule
 
 
+def _patch_dynamic_cache():
+    """Restore DynamicCache.from_legacy_cache removed in transformers ≥ 4.44.
+
+    The cached Phi-3 revision (f39ac1d) still calls this classmethod.
+    We add it back as a no-op shim when it is missing.
+    """
+    try:
+        from transformers.cache_utils import DynamicCache
+        if not hasattr(DynamicCache, "from_legacy_cache"):
+            @classmethod
+            def from_legacy_cache(cls, past_key_values=None):
+                cache = cls()
+                if past_key_values is not None:
+                    for layer_idx, layer_past in enumerate(past_key_values):
+                        cache.update(layer_past[0], layer_past[1], layer_idx)
+                return cache
+            DynamicCache.from_legacy_cache = from_legacy_cache
+    except ImportError:
+        pass
+
+
+_patch_dynamic_cache()
+
+
 def _load_phi3_base():
     """Load Phi-3 Mini with rope_scaling compatibility fix.
 
