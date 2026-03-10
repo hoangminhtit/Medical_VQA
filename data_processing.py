@@ -5,7 +5,9 @@ from datasets import load_dataset
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
-from config import DatasetConfig
+from config import get_args, DatasetConfig
+
+config = get_args()
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
