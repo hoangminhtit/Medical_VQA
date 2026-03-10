@@ -59,7 +59,7 @@ def train(args):
     total     = sum(p.numel() for p in model.parameters())
     logger.info(f"Trainable params : {trainable:,} / {total:,}")
 
-    # Only optimise trainable params (LoRA adapters + input_proj + heads)
+    # Only optimize trainable parameters (T5 decoder + heads, encoder frozen)
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr

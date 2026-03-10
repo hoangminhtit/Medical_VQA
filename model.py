@@ -1,112 +1,61 @@
 import torch
 import torch.nn as nn
-from transformers import AutoConfig, AutoModelForCausalLM
-from peft import get_peft_model, LoraConfig, TaskType
+from transformers import T5ForConditionalGeneration
 
 from feature_extraction import BioMedCLIPEncoder
 from dual_gating_attention import DualGatingModule
 
 
-def _patch_dynamic_cache():
-    """Restore missing DynamicCache methods removed in newer transformers.
+class T5Decoder(nn.Module):
+    """T5-base encoder-decoder model.
 
-    The cached Phi-3 revision (f39ac1d) calls methods that were removed:
-    - from_legacy_cache: Convert legacy past_key_values to DynamicCache
-    - get_usable_length: Get effective sequence length considering cache
-    
-    We add them back as compatibility shims.
-    """
-    try:
-        from transformers.cache_utils import DynamicCache
-        
-        # Add from_legacy_cache if missing
-        if not hasattr(DynamicCache, "from_legacy_cache"):
-            @classmethod
-            def from_legacy_cache(cls, past_key_values=None):
-                cache = cls()
-                if past_key_values is not None:
-                    for layer_idx, layer_past in enumerate(past_key_values):
-                        cache.update(layer_past[0], layer_past[1], layer_idx)
-                return cache
-            DynamicCache.from_legacy_cache = from_legacy_cache
-        
-        # Add get_usable_length if missing
-        if not hasattr(DynamicCache, "get_usable_length"):
-            def get_usable_length(self, new_seq_length, layer_idx=0):
-                # Return the effective sequence length considering existing cache
-                existing_seq_len = self.get_seq_length(layer_idx) if hasattr(self, "get_seq_length") else 0
-                return existing_seq_len + new_seq_length
-            DynamicCache.get_usable_length = get_usable_length
-            
-    except ImportError:
-        pass
-
-
-_patch_dynamic_cache()
-
-
-def _load_phi3_base():
-    """Load Phi-3 Mini with rope_scaling compatibility fix.
-
-    Phi-3-mini-4k-instruct does NOT use LongRoPE.
-    Some cached revisions on Kaggle/HF ship an incomplete rope_scaling dict
-    (missing 'type', 'short_factor', 'long_factor'), causing KeyError at init.
-    The safe fix is to nullify rope_scaling entirely when required keys are absent.
-    """
-    _CKPT = "microsoft/Phi-3-mini-4k-instruct"
-    cfg = AutoConfig.from_pretrained(_CKPT, trust_remote_code=True)
-
-    # If rope_scaling is present but incomplete (not a proper LongRoPE config),
-    # remove it so the model falls back to standard RoPE.
-    if isinstance(getattr(cfg, "rope_scaling", None), dict):
-        required = {"type", "short_factor", "long_factor"}
-        if not required.issubset(cfg.rope_scaling.keys()):
-            cfg.rope_scaling = None
-
-    return AutoModelForCausalLM.from_pretrained(
-        _CKPT,
-        config=cfg,
-        torch_dtype=torch.float32,     # Force float32 to match BioMedCLIP outputs
-        trust_remote_code=True
-    )
-
-
-class PhiDecoder(nn.Module):
-    """Phi-3 Mini decoder fine-tuned with LoRA.
-
-    Projects BioMedCLIP encoder features (dim=768) into Phi-3's hidden space
-    (3072), runs them through the LLM, and returns the last-layer hidden states.
-    Only LoRA adapter weights and the input projection are trainable.
+    T5 is much lighter (220M vs 3.8B) and well-suited for VQA tasks.
+    No LoRA needed due to smaller size. Hidden dim (768) matches BioMedCLIP.
     """
 
     def __init__(self, encoder_dim: int = 768):
         super().__init__()
-
-        base = _load_phi3_base()
-
-        lora_cfg = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=16,
-            lora_alpha=32,
-            target_modules=["qkv_proj", "o_proj"],
-            lora_dropout=0.05,
-            bias="none"
+        
+        self.model = T5ForConditionalGeneration.from_pretrained(
+            "t5-base",
+            torch_dtype=torch.float32
         )
-        self.model = get_peft_model(base, lora_cfg)
-        self.hidden_size = self.model.config.hidden_size  # 3072
+        self.hidden_size = self.model.config.d_model  # 768
 
-        # Bridge encoder dim (768) → decoder hidden dim (3072)
-        self.input_proj = nn.Linear(encoder_dim, self.hidden_size)
+        # Optional projection if dims don't match (currently 768→768, so skip)
+        self.input_proj = None
+        if encoder_dim != self.hidden_size:
+            self.input_proj = nn.Linear(encoder_dim, self.hidden_size)
 
     def forward(self, fused: torch.Tensor) -> torch.Tensor:
         # fused: (B, N+L, encoder_dim)
-        embeds = self.input_proj(fused)          # (B, N+L, hidden_size)
-        out = self.model(
-            inputs_embeds=embeds,
+        inputs_embeds = fused
+        if self.input_proj is not None:
+            inputs_embeds = self.input_proj(fused)  # (B, N+L, 768)
+        
+        batch_size = inputs_embeds.size(0)
+        device = inputs_embeds.device
+        
+        # T5 needs decoder_input_ids; use pad token (0) to start generation
+        decoder_input_ids = torch.zeros(
+            batch_size, 1, dtype=torch.long, device=device
+        )
+        
+        # Run T5 encoder-decoder
+        outputs = self.model(
+            inputs_embeds=inputs_embeds,          # Encoder input
+            decoder_input_ids=decoder_input_ids,  # Decoder input (just pad)
             output_hidden_states=True,
             return_dict=True
         )
-        return out.hidden_states[-1]             # (B, N+L, hidden_size)
+        
+        # Return last decoder hidden state: (B, 1, 768)
+        # Expand to (B, seq_len, 768) for compatibility with heads
+        decoder_hidden = outputs.decoder_hidden_states[-1]  # (B, 1, 768)
+        seq_len = inputs_embeds.size(1)
+        
+        # Repeat decoder output to match original sequence length
+        return decoder_hidden.expand(-1, seq_len, -1)  # (B, N+L, 768)
 
 
 class MedicalVQAModel(nn.Module):
@@ -122,9 +71,9 @@ class MedicalVQAModel(nn.Module):
 
         self.encoder     = BioMedCLIPEncoder()
         self.dual_gating = DualGatingModule(encoder_dim)
-        self.decoder     = PhiDecoder(encoder_dim)
+        self.decoder     = T5Decoder(encoder_dim)
 
-        dec_dim = self.decoder.hidden_size  # 3072
+        dec_dim = self.decoder.hidden_size  # 768 (same as BioMedCLIP)
 
         # Yes/No classification head
         self.yesno_head = nn.Linear(dec_dim, 1)
@@ -143,14 +92,14 @@ class MedicalVQAModel(nn.Module):
         # ── Feature Fusion ──────────────────────────────────────────
         fused = torch.cat([V, Q], dim=1)         # (B, N+L, 768)
 
-        # ── Decoder (Phi-3 Mini + LoRA) ─────────────────────────────
-        hidden = self.decoder(fused)             # (B, N+L, 3072)
+        # ── Decoder (T5-base) ───────────────────────────────────────
+        hidden = self.decoder(fused)             # (B, N+L, 768)
 
         # ── Output Heads ────────────────────────────────────────────
-        cls          = hidden[:, 0]                              # (B, 3072)
+        cls          = hidden[:, 0]                              # (B, 768)
         yesno_logits = self.yesno_head(cls)                      # (B, 1)
 
-        gen_hidden   = hidden[:, -self.max_answer_len:, :]       # (B, 16, 3072)
+        gen_hidden   = hidden[:, -self.max_answer_len:, :]       # (B, 16, 768)
         gen_logits   = self.gen_head(gen_hidden)                 # (B, 16, vocab_size)
 
         return yesno_logits, gen_logits

@@ -2,7 +2,6 @@ torch
 torchvision
 transformers>=4.40.0
 timm
-peft
 datasets
 nltk
 open-clip-torch
