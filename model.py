@@ -66,6 +66,7 @@ def _load_phi3_base():
     return AutoModelForCausalLM.from_pretrained(
         _CKPT,
         config=cfg,
+        torch_dtype=torch.float32,     # Force float32 to match BioMedCLIP outputs
         trust_remote_code=True
     )
 
