@@ -10,20 +10,20 @@ from dual_gating_attention import DualGatingModule
 def _load_phi3_base():
     """Load Phi-3 Mini with rope_scaling compatibility fix.
 
-    Older transformers (<4.40) don't include a 'type' key in rope_scaling
-    for Phi-3's LongRoPE config, causing a KeyError at model init.
-    We patch the config before constructing the model.
+    Phi-3-mini-4k-instruct does NOT use LongRoPE.
+    Some cached revisions on Kaggle/HF ship an incomplete rope_scaling dict
+    (missing 'type', 'short_factor', 'long_factor'), causing KeyError at init.
+    The safe fix is to nullify rope_scaling entirely when required keys are absent.
     """
     _CKPT = "microsoft/Phi-3-mini-4k-instruct"
     cfg = AutoConfig.from_pretrained(_CKPT, trust_remote_code=True)
 
-    # Patch: add missing 'type' key for transformers < 4.40
-    if (
-        hasattr(cfg, "rope_scaling")
-        and isinstance(cfg.rope_scaling, dict)
-        and "type" not in cfg.rope_scaling
-    ):
-        cfg.rope_scaling["type"] = "longrope"
+    # If rope_scaling is present but incomplete (not a proper LongRoPE config),
+    # remove it so the model falls back to standard RoPE.
+    if isinstance(getattr(cfg, "rope_scaling", None), dict):
+        required = {"type", "short_factor", "long_factor"}
+        if not required.issubset(cfg.rope_scaling.keys()):
+            cfg.rope_scaling = None
 
     return AutoModelForCausalLM.from_pretrained(
         _CKPT,
