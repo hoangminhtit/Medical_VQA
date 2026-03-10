@@ -1,10 +1,35 @@
 import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM
 from peft import get_peft_model, LoraConfig, TaskType
 
 from feature_extraction import BioMedCLIPEncoder
 from dual_gating_attention import DualGatingModule
+
+
+def _load_phi3_base():
+    """Load Phi-3 Mini with rope_scaling compatibility fix.
+
+    Older transformers (<4.40) don't include a 'type' key in rope_scaling
+    for Phi-3's LongRoPE config, causing a KeyError at model init.
+    We patch the config before constructing the model.
+    """
+    _CKPT = "microsoft/Phi-3-mini-4k-instruct"
+    cfg = AutoConfig.from_pretrained(_CKPT, trust_remote_code=True)
+
+    # Patch: add missing 'type' key for transformers < 4.40
+    if (
+        hasattr(cfg, "rope_scaling")
+        and isinstance(cfg.rope_scaling, dict)
+        and "type" not in cfg.rope_scaling
+    ):
+        cfg.rope_scaling["type"] = "longrope"
+
+    return AutoModelForCausalLM.from_pretrained(
+        _CKPT,
+        config=cfg,
+        trust_remote_code=True
+    )
 
 
 class PhiDecoder(nn.Module):
@@ -18,10 +43,7 @@ class PhiDecoder(nn.Module):
     def __init__(self, encoder_dim: int = 768):
         super().__init__()
 
-        base = AutoModelForCausalLM.from_pretrained(
-            "microsoft/Phi-3-mini-4k-instruct",
-            trust_remote_code=True
-        )
+        base = _load_phi3_base()
 
         lora_cfg = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
