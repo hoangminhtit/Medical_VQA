@@ -8,13 +8,18 @@ from dual_gating_attention import DualGatingModule
 
 
 def _patch_dynamic_cache():
-    """Restore DynamicCache.from_legacy_cache removed in transformers ≥ 4.44.
+    """Restore missing DynamicCache methods removed in newer transformers.
 
-    The cached Phi-3 revision (f39ac1d) still calls this classmethod.
-    We add it back as a no-op shim when it is missing.
+    The cached Phi-3 revision (f39ac1d) calls methods that were removed:
+    - from_legacy_cache: Convert legacy past_key_values to DynamicCache
+    - get_usable_length: Get effective sequence length considering cache
+    
+    We add them back as compatibility shims.
     """
     try:
         from transformers.cache_utils import DynamicCache
+        
+        # Add from_legacy_cache if missing
         if not hasattr(DynamicCache, "from_legacy_cache"):
             @classmethod
             def from_legacy_cache(cls, past_key_values=None):
@@ -24,6 +29,15 @@ def _patch_dynamic_cache():
                         cache.update(layer_past[0], layer_past[1], layer_idx)
                 return cache
             DynamicCache.from_legacy_cache = from_legacy_cache
+        
+        # Add get_usable_length if missing
+        if not hasattr(DynamicCache, "get_usable_length"):
+            def get_usable_length(self, new_seq_length, layer_idx=0):
+                # Return the effective sequence length considering existing cache
+                existing_seq_len = self.get_seq_length(layer_idx) if hasattr(self, "get_seq_length") else 0
+                return existing_seq_len + new_seq_length
+            DynamicCache.get_usable_length = get_usable_length
+            
     except ImportError:
         pass
 
