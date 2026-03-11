@@ -52,8 +52,11 @@ class T5Decoder(nn.Module):
             generated_ids = self.model.generate(
                 encoder_outputs=encoder_outputs,
                 max_new_tokens=self.max_answer_len,
-                num_beams=1,           # Greedy decoding for speed
-                do_sample=False,
+                num_beams=2,           # Beam search for better quality
+                do_sample=True,        # Enable sampling
+                temperature=0.7,       # Reduce repetition
+                repetition_penalty=1.2, # Penalize repeated tokens
+                no_repeat_ngram_size=2,  # Avoid 2-gram repetition
                 pad_token_id=self.model.config.pad_token_id,
                 eos_token_id=self.model.config.eos_token_id,
                 return_dict_in_generate=True,
