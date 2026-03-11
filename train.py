@@ -85,7 +85,7 @@ def train(args):
             yn_lbl    = batch["yesno"].to(device)
             gen_lbl   = batch["answer"].to(device)
 
-            yesno_logits, gen_logits = model(images, input_ids, mask)
+            yesno_logits, gen_logits = model(images, input_ids, mask, generate_text=False)
 
             loss = compute_loss(
                 yesno_logits, gen_logits, yn_lbl, gen_lbl,

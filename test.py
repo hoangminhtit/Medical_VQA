@@ -78,7 +78,12 @@ def evaluate_test(args):
             is_yn     = batch["is_yesno"].bool()
             gen_lbl   = batch["answer"]     # stays on CPU for decoding
 
-            yesno_logits, gen_logits = model(images, input_ids, mask)
+            yesno_logits, _ = model(images, input_ids, mask, generate_text=False)  # Classification
+            _, generated_ids = model(images, input_ids, mask, generate_text=True)   # Generation
+            
+            # Use T5 tokenizer for decoding generated text
+            from transformers import T5Tokenizer
+            t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
 
             # Yes / No
             if is_yn.any():
@@ -90,9 +95,8 @@ def evaluate_test(args):
             # Open-ended
             open_mask = ~is_yn
             if open_mask.any():
-                pred_ids   = gen_logits[open_mask].argmax(dim=-1)   # (N, 16)
-                pred_texts = tokenizer.batch_decode(
-                    pred_ids.cpu(), skip_special_tokens=True
+                pred_texts = t5_tokenizer.batch_decode(
+                    generated_ids[open_mask].cpu(), skip_special_tokens=True
                 )
                 gt_texts = tokenizer.batch_decode(
                     gen_lbl[open_mask].cpu(), skip_special_tokens=True

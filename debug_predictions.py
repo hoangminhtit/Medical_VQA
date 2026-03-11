@@ -65,16 +65,22 @@ def analyze_predictions(args, num_samples: int = 200):
             gen_labels = batch["answer"]
             
             # Get model outputs
-            yesno_logits, gen_logits = model(images, input_ids, mask)
+            yesno_logits, _ = model(images, input_ids, mask, generate_text=False)  # Training mode for Y/N
             
-            # Decode predictions
+            # For text generation, use generation mode
+            _, generated_ids = model(images, input_ids, mask, generate_text=True)  # Generation mode
+            
+            # Decode predictions  
             yn_preds = (yesno_logits.cpu() > 0).long().squeeze(-1)
-            gen_pred_ids = gen_logits.cpu().argmax(dim=-1)  # (B, 16)
+            
+            # Decode generated text using T5 tokenizer
+            from transformers import T5Tokenizer
+            t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
             
             # Decode to text
             questions = tokenizer.batch_decode(input_ids.cpu(), skip_special_tokens=True)
             gt_answers = tokenizer.batch_decode(gen_labels, skip_special_tokens=True)
-            pred_answers = tokenizer.batch_decode(gen_pred_ids, skip_special_tokens=True)
+            pred_answers = t5_tokenizer.batch_decode(generated_ids.cpu(), skip_special_tokens=True)
             
             # Process each sample
             for i in range(len(questions)):
