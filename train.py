@@ -85,7 +85,9 @@ def train(args):
             yn_lbl    = batch["yesno"].to(device)
             gen_lbl   = batch["answer"].to(device)
 
-            yesno_logits, gen_logits = model(images, input_ids, mask, generate_text=False)
+            yesno_logits, gen_logits = model(
+                images, input_ids, mask, labels=gen_lbl, generate_text=False
+            )
 
             loss = compute_loss(
                 yesno_logits, gen_logits, yn_lbl, gen_lbl,
@@ -102,12 +104,20 @@ def train(args):
         avg_loss = total_loss / len(train_loader)
         metrics  = evaluate(model, val_loader, device)
 
+        # Enhanced logging with comprehensive BLEU metrics
         logger.info(
             f"Epoch {epoch + 1:02d}/{args.epochs} | "
             f"Loss {avg_loss:.4f} | "
-            f"Val Y/N Acc {metrics['yesno_acc']:.4f} | "
-            f"Val BLEU {metrics['open_bleu']:.4f} | "
+            f"Val Y/N {metrics['yesno_acc']:.4f} | "
             f"Val Exact {metrics['open_exact']:.4f}"
+        )
+        logger.info(
+            f"  BLEU-1: {metrics['bleu1']:.4f} | BLEU-2: {metrics['bleu2']:.4f} | "
+            f"BLEU-3: {metrics['bleu3']:.4f} | BLEU-4: {metrics['bleu4']:.4f}"
+        )
+        logger.info(
+            f"  BLEU Composite: {metrics['bleu_composite']:.4f} | "
+            f"Brevity Penalty: {metrics['brevity_penalty']:.4f}"
         )
 
         # Save best checkpoint based on yes/no accuracy

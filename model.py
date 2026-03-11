@@ -28,11 +28,12 @@ class T5Decoder(nn.Module):
         if encoder_dim != self.hidden_size:
             self.input_proj = nn.Linear(encoder_dim, self.hidden_size)
 
-    def forward(self, fused: torch.Tensor, generate_text: bool = False) -> torch.Tensor:
+    def forward(self, fused: torch.Tensor, labels: torch.Tensor = None, generate_text: bool = False) -> torch.Tensor:
         """Forward pass with dual mode: classification vs generation.
         
         Args:
             fused: (B, N+L, encoder_dim) - concatenated vision + text features
+            labels: (B, max_answer_len) - target token IDs for training (T5 tokenized)
             generate_text: If True, use autoregressive generation for text.
                           If False, return pooled features for classification.
         """
@@ -67,22 +68,41 @@ class T5Decoder(nn.Module):
             return generated_ids.sequences
             
         else:
-            # ── Classification Mode ─────────────────────────────────────
-            # Single forward pass for pooled representation
-            decoder_input_ids = torch.zeros(
-                batch_size, 1, dtype=torch.long, device=device
-            )
-            
-            outputs = self.model(
-                inputs_embeds=inputs_embeds,
-                decoder_input_ids=decoder_input_ids,
-                output_hidden_states=True,
-                return_dict=True
-            )
-            
-            # Return pooled representation for classification
-            cls_hidden = outputs.decoder_hidden_states[-1][:, 0]  # (B, 768)
-            return cls_hidden
+            if labels is not None:
+                # ── Training Mode: Compute generation logits ─────────────
+                # Prepare decoder input (shift right for T5)
+                decoder_input_ids = self.model._shift_right(labels)
+                
+                outputs = self.model(
+                    inputs_embeds=inputs_embeds,
+                    decoder_input_ids=decoder_input_ids,
+                    labels=labels,  # T5 will compute language modeling loss internally
+                    output_hidden_states=True,
+                    return_dict=True
+                )
+                
+                # Return both classification features and generation logits
+                cls_hidden = outputs.decoder_hidden_states[-1][:, 0]  # (B, 768)
+                gen_logits = outputs.logits  # (B, max_answer_len, vocab_size)
+                
+                return cls_hidden, gen_logits
+            else:
+                # ── Classification Mode (without labels) ─────────────────
+                # Single forward pass for pooled representation
+                decoder_input_ids = torch.zeros(
+                    batch_size, 1, dtype=torch.long, device=device
+                )
+                
+                outputs = self.model(
+                    inputs_embeds=inputs_embeds,
+                    decoder_input_ids=decoder_input_ids,
+                    output_hidden_states=True,
+                    return_dict=True
+                )
+                
+                # Return pooled representation for classification
+                cls_hidden = outputs.decoder_hidden_states[-1][:, 0]  # (B, 768)
+                return cls_hidden
 
 
 class MedicalVQAModel(nn.Module):
@@ -107,7 +127,7 @@ class MedicalVQAModel(nn.Module):
 
         # Note: No gen_head needed - T5 has built-in language modeling head
 
-    def forward(self, images, input_ids, attention_mask, generate_text: bool = False):
+    def forward(self, images, input_ids, attention_mask, labels=None, generate_text: bool = False):
         # ── Encoder (frozen BioMedCLIP) ─────────────────────────────
         V, Q = self.encoder(images, input_ids, attention_mask)
         # V: (B, N, 768)   Q: (B, L, 768)
@@ -126,15 +146,21 @@ class MedicalVQAModel(nn.Module):
         
         else:
             # ── Training/Classification Mode ────────────────────────
-            cls_features = self.decoder(fused, generate_text=False)   # (B, 768)
-            yesno_logits = self.yesno_head(cls_features)              # (B, 1)
-            
-            # For training, we still need gen_logits shape for loss computation
-            # Create dummy logits - T5 will handle text generation separately
-            batch_size = cls_features.size(0)
-            dummy_gen_logits = torch.zeros(
-                batch_size, self.max_answer_len, 32128,  # T5 vocab_size = 32128
-                device=cls_features.device, dtype=cls_features.dtype
-            )
-            
-            return yesno_logits, dummy_gen_logits
+            if labels is not None:
+                # Training mode: get both classification features and generation logits
+                cls_features, gen_logits = self.decoder(fused, labels=labels, generate_text=False)
+                yesno_logits = self.yesno_head(cls_features)              # (B, 1)
+                return yesno_logits, gen_logits
+            else:
+                # Classification-only mode 
+                cls_features = self.decoder(fused, generate_text=False)   # (B, 768)
+                yesno_logits = self.yesno_head(cls_features)              # (B, 1)
+                
+                # Create dummy gen_logits for compatibility
+                batch_size = cls_features.size(0)
+                dummy_gen_logits = torch.zeros(
+                    batch_size, self.max_answer_len, 32128,  # T5 vocab_size = 32128
+                    device=cls_features.device, dtype=cls_features.dtype
+                )
+                
+                return yesno_logits, dummy_gen_logits

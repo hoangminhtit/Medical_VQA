@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, T5Tokenizer
 import torchvision.transforms as transforms
 
 
@@ -23,9 +23,13 @@ class MedicalVQADataset(Dataset):
         self.data         = data
         self.image_folder = image_folder
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        # Use BioMedCLIP tokenizer for questions (needed for encoder)
+        self.question_tokenizer = AutoTokenizer.from_pretrained(
             "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
         )
+        
+        # Use T5 tokenizer for answers (matches the decoder)
+        self.answer_tokenizer = T5Tokenizer.from_pretrained("t5-base")
 
         self.transform = transforms.Compose([
             transforms.Resize((224, 224)),
@@ -51,7 +55,7 @@ class MedicalVQADataset(Dataset):
 
         # ── Tokenise question ───────────────────────────────────────
         question = sample["question"]
-        q_tokens = self.tokenizer(
+        q_tokens = self.question_tokenizer(
             question,
             padding="max_length",
             truncation=True,
@@ -66,7 +70,8 @@ class MedicalVQADataset(Dataset):
         yn_flag    = self.is_yesno(answer)
         yn_label   = 1 if answer.strip().lower() == "yes" else 0
 
-        gen_tokens = self.tokenizer(
+        # Use T5 tokenizer for answer labels to match T5 decoder vocabulary
+        gen_tokens = self.answer_tokenizer(
             answer,
             padding="max_length",
             truncation=True,

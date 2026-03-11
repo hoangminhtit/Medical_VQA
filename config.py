@@ -64,12 +64,12 @@ def get_args():
 
     # ── Loss weights ───────────────────────────────────────────────
     parser.add_argument(
-        "--loss_alpha", type=float, default=0.5,
+        "--loss_alpha", type=float, default=1.0,
         help="Weight for Yes/No BCE loss"
     )
     parser.add_argument(
         "--loss_beta", type=float, default=0.5,
-        help="Weight for generative CE loss"
+        help="Weight for generative CE loss (now enabled for T5 training)"
     )
 
     # ── Device ─────────────────────────────────────────────────────

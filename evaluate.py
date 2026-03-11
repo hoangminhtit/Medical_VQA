@@ -1,76 +1,42 @@
 import torch
-from transformers import AutoTokenizer
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+from transformers import T5Tokenizer
+from metrics import evaluate_medical_vqa
 
 
 def evaluate(model, dataloader, device):
-    """Evaluate on a dataloader.
+    """Evaluate on a dataloader with comprehensive metrics.
 
     Returns a dict with:
-        yesno_acc  – accuracy on yes/no questions
-        open_bleu  – mean BLEU-1 on open-ended questions
-        open_exact – exact-match accuracy on open-ended questions
+        yesno_accuracy     – accuracy on yes/no questions
+        open_exact_match   – exact-match accuracy on open-ended questions  
+        bleu1, bleu2, bleu3, bleu4 – individual BLEU scores
+        bleu_composite     – composite BLEU score with brevity penalty
+        brevity_penalty    – brevity penalty factor
     """
     model.eval()
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
+    # Use T5 tokenizer for answer decoding (matches dataset)
+    t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
+    
+    # Use comprehensive evaluation from metrics module
+    results = evaluate_medical_vqa(
+        model=model,
+        dataloader=dataloader, 
+        device=device,
+        t5_tokenizer=t5_tokenizer,
+        verbose=False  # Don't print during training
     )
-    smoother = SmoothingFunction().method1
-
-    yesno_correct = 0
-    yesno_total   = 0
-    open_bleu     = 0.0
-    open_exact    = 0
-    open_total    = 0
-
-    with torch.no_grad():
-        for batch in dataloader:
-            images    = batch["image"].to(device)
-            input_ids = batch["input_ids"].to(device)
-            mask      = batch["attention_mask"].to(device)
-            yn_labels = batch["yesno"].to(device)
-            is_yn     = batch["is_yesno"].bool()
-            gen_lbl   = batch["answer"]
-
-            yesno_logits, _ = model(images, input_ids, mask, generate_text=False)  # Classification mode
-            
-            # Generate text for open-ended questions
-            _, generated_ids = model(images, input_ids, mask, generate_text=True)   # Generation mode
-            
-            # Use T5 tokenizer for generated text
-            from transformers import T5Tokenizer
-            t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
-
-            # Yes / No accuracy
-            if is_yn.any():
-                preds = (yesno_logits[is_yn] > 0).long().squeeze(-1)
-                gt    = yn_labels[is_yn]
-                yesno_correct += (preds == gt).sum().item()
-                yesno_total   += gt.size(0)
-
-            # Open-ended: BLEU-1 + exact match
-            open_mask = ~is_yn
-            if open_mask.any():
-                # Use generated text for open-ended questions
-                pred_texts = t5_tokenizer.batch_decode(
-                    generated_ids[open_mask].cpu(), skip_special_tokens=True
-                )
-                gt_texts = tokenizer.batch_decode(
-                    gen_lbl[open_mask].cpu(), skip_special_tokens=True
-                )
-                for pred, gt in zip(pred_texts, gt_texts):
-                    pred_tok = pred.lower().split()
-                    gt_tok   = gt.lower().split()
-                    if gt_tok:
-                        open_bleu  += sentence_bleu(
-                            [gt_tok], pred_tok, smoothing_function=smoother
-                        )
-                        open_exact += int(pred.strip().lower() == gt.strip().lower())
-                        open_total += 1
-
+    
+    # Return in format expected by training loop
     return {
-        "yesno_acc" : yesno_correct / yesno_total if yesno_total > 0 else 0.0,
-        "open_bleu" : open_bleu    / open_total   if open_total  > 0 else 0.0,
-        "open_exact": open_exact   / open_total   if open_total  > 0 else 0.0,
+        "yesno_acc": results["yesno_accuracy"] or 0.0,
+        "open_bleu": results["bleu1"],  # For compatibility with training loop
+        "open_exact": results["open_exact_match"],
+        # Additional comprehensive metrics
+        "bleu1": results["bleu1"], 
+        "bleu2": results["bleu2"],
+        "bleu3": results["bleu3"], 
+        "bleu4": results["bleu4"],
+        "bleu_composite": results["bleu_composite"],
+        "brevity_penalty": results["brevity_penalty"]
     }
