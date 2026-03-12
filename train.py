@@ -72,6 +72,7 @@ def train(args):
 
     # ── Training loop ────────────────────────────────────────────────
     best_yn_acc = 0.0
+    no_improve_count = 0
 
     for epoch in range(args.epochs):
 
@@ -123,8 +124,19 @@ def train(args):
         # Save best checkpoint based on yes/no accuracy
         if metrics["yesno_acc"] >= best_yn_acc:
             best_yn_acc = metrics["yesno_acc"]
+            no_improve_count = 0
             save_checkpoint(model, args.checkpoint)
             logger.info(f"  → Checkpoint saved (best Y/N Acc {best_yn_acc:.4f})")
+        else:
+            no_improve_count += 1
+            logger.info(
+                f"  → No improvement for {no_improve_count}/{args.early_stopping} epoch(s)"
+            )
+            if args.early_stopping > 0 and no_improve_count >= args.early_stopping:
+                logger.info(
+                    f"Early stopping triggered after {no_improve_count} epoch(s) without improvement."
+                )
+                break
 
     logger.info("Training complete.")
 

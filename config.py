@@ -72,6 +72,12 @@ def get_args():
         help="Weight for generative CE loss (now enabled for T5 training)"
     )
 
+    # ── Early stopping ─────────────────────────────────────────────
+    parser.add_argument(
+        "--early_stopping", type=int, default=3,
+        help="Stop training if val Y/N acc has not improved for this many epochs (0 = disabled)"
+    )
+
     # ── Device ─────────────────────────────────────────────────────
     parser.add_argument(
         "--device", type=str,
