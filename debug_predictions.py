@@ -2,7 +2,7 @@ import torch
 import pandas as pd
 from torch.utils.data import DataLoader
 from datasets import load_dataset
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, T5Tokenizer
 from collections import Counter
 
 from config import get_args
@@ -32,9 +32,10 @@ def analyze_predictions(args, num_samples: int = 200):
     print(f"Model loaded from: {args.checkpoint}")
 
     # ── Tokenizer ──────────────────────────────────────────────────
-    tokenizer = AutoTokenizer.from_pretrained(
+    question_tokenizer = AutoTokenizer.from_pretrained(
         "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
     )
+    t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
 
     # ── Dataset ────────────────────────────────────────────────────
     ds = load_dataset(args.dataset)
@@ -73,13 +74,9 @@ def analyze_predictions(args, num_samples: int = 200):
             # Decode predictions  
             yn_preds = (yesno_logits.cpu() > 0).long().squeeze(-1)
             
-            # Decode generated text using T5 tokenizer
-            from transformers import T5Tokenizer
-            t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
-            
             # Decode to text
-            questions = tokenizer.batch_decode(input_ids.cpu(), skip_special_tokens=True)
-            gt_answers = tokenizer.batch_decode(gen_labels, skip_special_tokens=True)
+            questions = question_tokenizer.batch_decode(input_ids.cpu(), skip_special_tokens=True)
+            gt_answers = t5_tokenizer.batch_decode(gen_labels.cpu(), skip_special_tokens=True)
             pred_answers = t5_tokenizer.batch_decode(generated_ids.cpu(), skip_special_tokens=True)
             
             # Process each sample
