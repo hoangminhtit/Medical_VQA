@@ -26,11 +26,33 @@ def train(args):
     logger.info("=" * 60)
 
     # ── Data ────────────────────────────────────────────────────────
-    ds      = load_dataset(args.dataset)
-    val_key = "validation" if "validation" in ds else "val"
+    ds = load_dataset(args.dataset)
 
-    train_dataset = MedicalVQADataset(ds["train"])
-    val_dataset   = MedicalVQADataset(ds[val_key])
+    if "train" not in ds:
+        raise ValueError(
+            f"Dataset '{args.dataset}' does not contain a 'train' split. Available splits: {list(ds.keys())}"
+        )
+
+    train_split = ds["train"]
+    val_source = None
+
+    if "validation" in ds:
+        val_split = ds["validation"]
+        val_source = "validation"
+    elif "val" in ds:
+        val_split = ds["val"]
+        val_source = "val"
+    elif "test" in ds:
+        val_split = ds["test"]
+        val_source = "test"
+    else:
+        split_ds = train_split.train_test_split(test_size=0.1, seed=42)
+        train_split = split_ds["train"]
+        val_split = split_ds["test"]
+        val_source = "train[10% split]"
+
+    train_dataset = MedicalVQADataset(train_split)
+    val_dataset = MedicalVQADataset(val_split)
 
     train_loader = DataLoader(
         train_dataset,
@@ -47,6 +69,7 @@ def train(args):
         f"Train samples : {len(train_dataset)} | "
         f"Val samples : {len(val_dataset)}"
     )
+    logger.info(f"Validation source split : {val_source}")
 
     # ── Model ────────────────────────────────────────────────────────
     model = MedicalVQAModel(
