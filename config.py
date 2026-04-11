@@ -24,7 +24,7 @@ def get_args():
             --log_name   pathvqa_run1          # <-- same name = same log file
     """
     parser = argparse.ArgumentParser(
-        description="Medical VQA — BioMedCLIP + Phi-3 Mini"
+        description="Medical VQA — BioMedCLIP + T5"
     )
 
     # ── Dataset ────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ def get_args():
 
     # ── Model ──────────────────────────────────────────────────────
     parser.add_argument("--encoder_dim",    type=int, default=768)
-    parser.add_argument("--vocab_size",     type=int, default=30522)
+    parser.add_argument("--vocab_size",     type=int, default=32128)
     parser.add_argument("--max_answer_len", type=int, default=16)
 
     # ── Loss weights ───────────────────────────────────────────────

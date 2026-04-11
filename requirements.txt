@@ -5,3 +5,6 @@ timm
 datasets
 nltk
 open-clip-torch
+pandas
+matplotlib
+Pillow

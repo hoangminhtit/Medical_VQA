@@ -107,6 +107,7 @@ def train(args):
             input_ids = batch["input_ids"].to(device)
             mask      = batch["attention_mask"].to(device)
             yn_lbl    = batch["yesno"].to(device)
+            is_yn     = batch["is_yesno"].to(device)
             gen_lbl   = batch["answer"].to(device)
 
             yesno_logits, gen_logits = model(
@@ -115,6 +116,7 @@ def train(args):
 
             loss = compute_loss(
                 yesno_logits, gen_logits, yn_lbl, gen_lbl,
+                is_yesno=is_yn,
                 alpha=args.loss_alpha, beta=args.loss_beta
             )
 
@@ -129,10 +131,12 @@ def train(args):
         metrics  = evaluate(model, val_loader, device)
 
         # Enhanced logging with comprehensive BLEU metrics
+        yn_acc = metrics["yesno_acc"]
+        yn_text = f"{yn_acc:.4f}" if yn_acc is not None else "N/A"
         logger.info(
             f"Epoch {epoch + 1:02d}/{args.epochs} | "
             f"Loss {avg_loss:.4f} | "
-            f"Val Y/N {metrics['yesno_acc']:.4f} | "
+            f"Val Y/N {yn_text} | "
             f"Val Exact {metrics['open_exact']:.4f}"
         )
         logger.info(
@@ -144,9 +148,9 @@ def train(args):
             f"Brevity Penalty: {metrics['brevity_penalty']:.4f}"
         )
 
-        # Save best checkpoint based on yes/no accuracy
-        if metrics["yesno_acc"] >= best_yn_acc:
-            best_yn_acc = metrics["yesno_acc"]
+        # Save best checkpoint based on yes/no accuracy (strict improvement).
+        if yn_acc is not None and yn_acc > best_yn_acc:
+            best_yn_acc = yn_acc
             no_improve_count = 0
             save_checkpoint(model, args.checkpoint)
             logger.info(f"  → Checkpoint saved (best Y/N Acc {best_yn_acc:.4f})")

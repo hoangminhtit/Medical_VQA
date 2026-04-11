@@ -61,7 +61,7 @@ def analyze_predictions(args, num_samples: int = 200):
             images = batch["image"].to(device)
             input_ids = batch["input_ids"].to(device)
             mask = batch["attention_mask"].to(device)
-            yn_labels = batch["yesno"]
+            yn_labels = batch["yesno"].cpu()
             is_yn = batch["is_yesno"]
             gen_labels = batch["answer"]
             
@@ -72,7 +72,7 @@ def analyze_predictions(args, num_samples: int = 200):
             _, generated_ids = model(images, input_ids, mask, generate_text=True)  # Generation mode
             
             # Decode predictions  
-            yn_preds = (yesno_logits.cpu() > 0).long().squeeze(-1)
+            yn_preds = (yesno_logits.cpu() > 0).long().view(-1)
             
             # Decode to text
             questions = question_tokenizer.batch_decode(input_ids.cpu(), skip_special_tokens=True)

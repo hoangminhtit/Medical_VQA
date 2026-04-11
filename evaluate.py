@@ -2,6 +2,8 @@ import torch
 from transformers import T5Tokenizer
 from metrics import evaluate_medical_vqa
 
+_T5_TOKENIZER = None
+
 
 def evaluate(model, dataloader, device):
     """Evaluate on a dataloader with comprehensive metrics.
@@ -16,20 +18,22 @@ def evaluate(model, dataloader, device):
     model.eval()
 
     # Use T5 tokenizer for answer decoding (matches dataset)
-    t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
+    global _T5_TOKENIZER
+    if _T5_TOKENIZER is None:
+        _T5_TOKENIZER = T5Tokenizer.from_pretrained("t5-base")
     
     # Use comprehensive evaluation from metrics module
     results = evaluate_medical_vqa(
         model=model,
         dataloader=dataloader, 
         device=device,
-        t5_tokenizer=t5_tokenizer,
+        t5_tokenizer=_T5_TOKENIZER,
         verbose=False  # Don't print during training
     )
     
     # Return in format expected by training loop
     return {
-        "yesno_acc": results["yesno_accuracy"] or 0.0,
+        "yesno_acc": results["yesno_accuracy"],
         "open_bleu": results["bleu1"],  # For compatibility with training loop
         "open_exact": results["open_exact_match"],
         # Additional comprehensive metrics

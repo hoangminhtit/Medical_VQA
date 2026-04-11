@@ -49,8 +49,13 @@ def evaluate_test(args):
     t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
 
     # ── Dataset ────────────────────────────────────────────────────
-    ds         = load_dataset(args.dataset)
-    test_split = ds.get("test", ds.get("validation"))
+    ds = load_dataset(args.dataset)
+    test_split = ds.get("test") or ds.get("validation") or ds.get("val")
+    if test_split is None:
+        raise ValueError(
+            f"Dataset '{args.dataset}' has no 'test', 'validation', or 'val' split. "
+            f"Available splits: {list(ds.keys())}"
+        )
     test_ds    = MedicalVQADataset(test_split)
 
     test_loader = DataLoader(

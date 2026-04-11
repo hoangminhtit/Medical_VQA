@@ -5,7 +5,7 @@ Includes comprehensive BLEU score evaluation adapted from your training code.
 
 import torch
 import math
-from nltk.translate.bleu_score import corpus_bleu, sentence_bleu, SmoothingFunction, brevity_penalty
+from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction, brevity_penalty
 from typing import List, Dict, Tuple
 
 
@@ -29,11 +29,11 @@ class BLEUEvaluator:
             references: List of ground truth answers
             hypotheses: List of predicted answers
         """
-        # Clean and prepare texts
-        clean_refs = [ref.strip().lower() for ref in references]
-        clean_hyps = [hyp.strip().lower() for hyp in hypotheses]
-        
-        self.all_references.extend([[ref] for ref in clean_refs])  # Wrap each ref in list for corpus_bleu
+        # Token-level BLEU expects token lists, not raw strings.
+        clean_refs = [ref.strip().lower().split() for ref in references]
+        clean_hyps = [hyp.strip().lower().split() for hyp in hypotheses]
+
+        self.all_references.extend([[ref] for ref in clean_refs])
         self.all_hypotheses.extend(clean_hyps)
         self.total_samples += len(references)
     
@@ -72,21 +72,16 @@ class BLEUEvaluator:
         )
         
         # Calculate brevity penalty
-        c = sum(len(hyp.split()) for hyp in self.all_hypotheses)  # Candidate length
-        r = sum(len(ref[0].split()) for ref in self.all_references)  # Reference length
-        bp = brevity_penalty(c, r)
+        c = sum(len(hyp) for hyp in self.all_hypotheses)      # Candidate length
+        r = sum(len(ref[0]) for ref in self.all_references)   # Reference length
+        bp = brevity_penalty(r, c)
         
         # Composite BLEU score (geometric mean with brevity penalty)
         bleu_scores = [bleu1, bleu2, bleu3, bleu4]
-        valid_scores = [score for score in bleu_scores if score > 0]
-        
-        if valid_scores:
-            # Geometric mean: exp(mean(log(scores)))
-            composite_bleu = bp * math.exp(
-                sum(math.log(score) for score in valid_scores) / len(valid_scores)
-            )
-        else:
-            composite_bleu = 0.0
+        eps = 1e-12
+        composite_bleu = bp * math.exp(
+            sum(math.log(max(score, eps)) for score in bleu_scores) / 4.0
+        )
         
         return {
             "bleu1": bleu1,
@@ -233,12 +228,11 @@ def evaluate_medical_vqa(
             input_ids = batch["input_ids"].to(device)
             mask = batch["attention_mask"].to(device)
             yn_labels = batch["yesno"].to(device)
-            is_yn = batch["is_yesno"].bool()
+            is_yn = batch["is_yesno"].to(device=device, dtype=torch.bool)
             gen_lbl = batch["answer"]  # CPU for decoding
             
-            # Model predictions
-            yesno_logits, _ = model(images, input_ids, mask, generate_text=False)
-            _, generated_ids = model(images, input_ids, mask, generate_text=True)
+            # Model predictions (single encoder/gating pass)
+            yesno_logits, generated_ids = model(images, input_ids, mask, generate_text=None)
             
             # Yes/No evaluation
             if is_yn.any():
@@ -249,6 +243,7 @@ def evaluate_medical_vqa(
             # Open-ended evaluation  
             open_mask = ~is_yn
             if open_mask.any():
+                open_mask_cpu = open_mask.cpu()
                 # Decode predictions
                 pred_texts = t5_tokenizer.batch_decode(
                     generated_ids[open_mask].cpu(), skip_special_tokens=True
@@ -256,7 +251,7 @@ def evaluate_medical_vqa(
                 
                 # Decode ground truth  
                 gt_texts = t5_tokenizer.batch_decode(
-                    gen_lbl[open_mask].cpu(), skip_special_tokens=True
+                    gen_lbl[open_mask_cpu], skip_special_tokens=True
                 )
                 
                 metrics.add_openended_batch(gt_texts, pred_texts)

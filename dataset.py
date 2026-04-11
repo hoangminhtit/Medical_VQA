@@ -68,7 +68,7 @@ class MedicalVQADataset(Dataset):
         # ── Answer labels ───────────────────────────────────────────
         answer     = sample["answer"]
         yn_flag    = self.is_yesno(answer)
-        yn_label   = 1 if answer.strip().lower() == "yes" else 0
+        yn_label   = 1 if (yn_flag and answer.strip().lower() == "yes") else 0
 
         # Use T5 tokenizer for answer labels to match T5 decoder vocabulary
         gen_tokens = self.answer_tokenizer(

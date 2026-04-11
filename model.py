@@ -53,10 +53,9 @@ class T5Decoder(nn.Module):
             generated_ids = self.model.generate(
                 encoder_outputs=encoder_outputs,
                 max_new_tokens=self.max_answer_len,
-                num_beams=2,           # Beam search for better quality
-                do_sample=True,        # Enable sampling
-                temperature=0.7,       # Reduce repetition
-                repetition_penalty=1.2, # Penalize repeated tokens
+                num_beams=2,
+                do_sample=False,
+                repetition_penalty=1.2,
                 no_repeat_ngram_size=2,  # Avoid 2-gram repetition
                 pad_token_id=self.model.config.pad_token_id,
                 eos_token_id=self.model.config.eos_token_id,
@@ -110,7 +109,7 @@ class MedicalVQAModel(nn.Module):
     def __init__(
         self,
         encoder_dim: int = 768,
-        vocab_size: int = 30522,
+        vocab_size: int = 32128,
         max_answer_len: int = 16
     ):
         super().__init__()
@@ -127,7 +126,7 @@ class MedicalVQAModel(nn.Module):
 
         # Note: No gen_head needed - T5 has built-in language modeling head
 
-    def forward(self, images, input_ids, attention_mask, labels=None, generate_text: bool = False):
+    def _build_fused_features(self, images, input_ids, attention_mask):
         # ── Encoder (frozen BioMedCLIP) ─────────────────────────────
         V, Q = self.encoder(images, input_ids, attention_mask)
         # V: (B, N, 768)   Q: (B, L, 768)
@@ -136,7 +135,17 @@ class MedicalVQAModel(nn.Module):
         V, Q = self.dual_gating(V, Q)
 
         # ── Feature Fusion ──────────────────────────────────────────
-        fused = torch.cat([V, Q], dim=1)         # (B, N+L, 768)
+        return torch.cat([V, Q], dim=1)         # (B, N+L, 768)
+
+    def forward(self, images, input_ids, attention_mask, labels=None, generate_text: bool = False):
+        fused = self._build_fused_features(images, input_ids, attention_mask)
+
+        if generate_text is None:
+            # Evaluation mode: run encoder/gating once, then decode both heads.
+            cls_features = self.decoder(fused, generate_text=False)
+            yesno_logits = self.yesno_head(cls_features)
+            generated_ids = self.decoder(fused, generate_text=True)
+            return yesno_logits, generated_ids
 
         if generate_text:
             # ── Text Generation Mode ────────────────────────────────
@@ -155,12 +164,5 @@ class MedicalVQAModel(nn.Module):
                 # Classification-only mode 
                 cls_features = self.decoder(fused, generate_text=False)   # (B, 768)
                 yesno_logits = self.yesno_head(cls_features)              # (B, 1)
-                
-                # Create dummy gen_logits for compatibility
-                batch_size = cls_features.size(0)
-                dummy_gen_logits = torch.zeros(
-                    batch_size, self.max_answer_len, 32128,  # T5 vocab_size = 32128
-                    device=cls_features.device, dtype=cls_features.dtype
-                )
-                
-                return yesno_logits, dummy_gen_logits
+
+                return yesno_logits, None

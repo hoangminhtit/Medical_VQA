@@ -1,6 +1,6 @@
-# Medical VQA — BioMedCLIP + Question-Aware Dual Gating + Phi-3 Mini
+# Medical VQA — BioMedCLIP + Question-Aware Dual Gating + T5
 
-A Medical Visual Question Answering system that combines a frozen **BioMedCLIP** dual encoder with a novel **Question-Aware Dual Gating** module and a LoRA fine-tuned **Phi-3 Mini** decoder. Evaluated on **PathVQA** and **VQA-Med 2019**.
+A Medical Visual Question Answering system that combines a frozen **BioMedCLIP** dual encoder with a **Question-Aware Dual Gating** module and a **T5-base** decoder for answer generation. Evaluated on **PathVQA** and **VQA-Med 2019 (vqa-rad proxy)**.
 
 ---
 
@@ -9,23 +9,21 @@ A Medical Visual Question Answering system that combines a frozen **BioMedCLIP**
 ```
 Image + Question
       ↓
-BioMedCLIP Encoder  (frozen)
-  ├─ Vision Encoder (ViT-B/16)  →  V ∈ R^{N×d}
-  └─ Text Encoder (PubMedBERT)  →  Q ∈ R^{L×d}
+BioMedCLIP Encoder (frozen)
+  ├─ Vision Encoder (ViT-B/16)      → V ∈ R^{N×d}
+  └─ Text Encoder (PubMedBERT)      → Q ∈ R^{L×d}
       ↓
 Question-Aware Dual Gating
-  ├─ Gate 1 (Text → Image):  V' = V + σ(W₁·q)  ⊙  CrossAttn(V, Q)
-  └─ Gate 2 (Image → Text):  Q' = Q + σ(W₂·v_cls) ⊙ CrossAttn(Q, V)
+  ├─ Gate 1 (Text → Image): V' = V + σ(W1·q) ⊙ CrossAttn(V, Q)
+  └─ Gate 2 (Image → Text): Q' = Q + σ(W2·v_cls) ⊙ CrossAttn(Q, V)
       ↓
-Feature Fusion  →  concat(V', Q')
+Feature Fusion: concat(V', Q')
       ↓
-Input Projection  (768 → 3072)
-      ↓
-Phi-3 Mini  +  LoRA  (fine-tuned)
+T5 Decoder (T5ForConditionalGeneration)
       ↓
 Two Output Heads
-  ├─ Yes/No Classification Head  →  BCE Loss
-  └─ Generative Answer Head      →  Cross-Entropy Loss
+  ├─ Yes/No Classification Head  → BCEWithLogitsLoss (masked by is_yesno)
+  └─ Generative Answer Head      → Token CE Loss (T5 logits)
 ```
 
 ---
@@ -34,18 +32,19 @@ Two Output Heads
 
 ```
 Medical_VQA/
-├── config.py              # CLI argument parser (get_args)
-├── dataset.py             # MedicalVQADataset — HuggingFace & local images
-├── data_processing.py     # Exploratory data loading / visualisation
-├── dual_gating_attention.py  # Question-Aware Dual Gating Module
-├── evaluate.py            # Evaluation: Y/N accuracy, BLEU-1, Exact Match
-├── feature_extraction.py  # BioMedCLIPEncoder (frozen)
-├── logger.py              # Shared file + console logger
-├── loss.py                # Weighted BCE + CE loss
-├── model.py               # MedicalVQAModel (full pipeline)
-├── train.py               # Training loop
-├── test.py                # Test-set evaluation
-├── utils.py               # Checkpoint save / load
+├── config.py
+├── dataset.py
+├── data_processing.py
+├── dual_gating_attention.py
+├── evaluate.py
+├── feature_extraction.py
+├── logger.py
+├── loss.py
+├── metrics.py
+├── model.py
+├── test.py
+├── train.py
+├── utils.py
 └── requirements.txt
 ```
 
@@ -61,17 +60,22 @@ pip install -r requirements.txt
 ```
 torch
 torchvision
-transformers
+transformers>=4.40.0
 timm
-peft
 datasets
 nltk
+open-clip-torch
+pandas
+matplotlib
+Pillow
 ```
 
-> **Note:** NLTK punkt data is required for BLEU scoring. Run once:
-> ```python
-> import nltk; nltk.download("punkt")
-> ```
+Note: NLTK punkt data is required for BLEU scoring.
+
+```python
+import nltk
+nltk.download("punkt")
+```
 
 ---
 
@@ -80,56 +84,41 @@ nltk
 | Dataset | HuggingFace ID | Split used |
 |---------|----------------|------------|
 | PathVQA | `flaviagiammarino/path-vqa` | train / val / test |
-| VQA-Med 2019 | `flaviagiammarino/vqa-rad` | train / val / test |
+| VQA-Med 2019 proxy | `flaviagiammarino/vqa-rad` | train / val / test |
 
-Datasets are downloaded automatically by the `datasets` library on first run.
+If a split is missing, train/test scripts apply fallback logic (validation/val/test, or split from train when needed).
 
 ---
 
 ## Training
 
-### Local
-
 ```bash
 python train.py \
-    --dataset    flaviagiammarino/path-vqa \
-    --checkpoint checkpoint.pt \
-    --log_dir    logs \
-    --log_name   pathvqa_run1 \
-    --batch_size 16 \
-    --epochs     10 \
-    --lr         1e-4 \
-    --device     cuda
+  --dataset flaviagiammarino/path-vqa \
+  --checkpoint checkpoint.pt \
+  --log_dir logs \
+  --log_name pathvqa_run1 \
+  --batch_size 16 \
+  --epochs 10 \
+  --lr 1e-4 \
+  --device cuda
 ```
 
-### Kaggle
-
-```bash
-python train.py \
-    --dataset    flaviagiammarino/path-vqa \
-    --checkpoint /kaggle/working/checkpoint.pt \
-    --log_dir    /kaggle/working/logs \
-    --log_name   pathvqa_run1 \
-    --batch_size 32 \
-    --epochs     20 \
-    --device     cuda
-```
-
-The best checkpoint (highest validation Yes/No accuracy) is saved automatically.
+The best checkpoint is saved by highest validation Yes/No accuracy (strict improvement only).
 
 ---
 
 ## Evaluation (Test Set)
 
-Pass the **same `--log_name`** as training to append test results into the same log file.
+Use the same `--log_name` as training to append into one log file.
 
 ```bash
 python test.py \
-    --checkpoint /kaggle/working/checkpoint.pt \
-    --log_dir    /kaggle/working/logs \
-    --log_name   pathvqa_run1 \
-    --dataset    flaviagiammarino/path-vqa \
-    --device     cuda
+  --checkpoint checkpoint.pt \
+  --log_dir logs \
+  --log_name pathvqa_run1 \
+  --dataset flaviagiammarino/path-vqa \
+  --device cuda
 ```
 
 ### Metrics
@@ -137,53 +126,29 @@ python test.py \
 | Question type | Metric |
 |---------------|--------|
 | Yes / No | Accuracy |
-| Open-ended | BLEU-1, Exact Match |
+| Open-ended | Exact Match, BLEU-1/2/3/4, Composite BLEU, Brevity Penalty |
 
 ---
 
-## All CLI Arguments
+## CLI Arguments
 
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--dataset` | `flaviagiammarino/path-vqa` | HuggingFace dataset ID |
-| `--checkpoint` | `checkpoint.pt` | Path to save/load checkpoint |
+| `--checkpoint` | `checkpoint.pt` | Save/load checkpoint path |
 | `--log_dir` | `logs` | Directory for log files |
-| `--log_name` | auto timestamp | Log file base name (no extension) |
+| `--log_name` | auto timestamp | Log file base name (without extension) |
 | `--batch_size` | `16` | Batch size |
-| `--epochs` | `10` | Number of training epochs |
-| `--lr` | `1e-4` | Learning rate (AdamW) |
+| `--epochs` | `10` | Number of epochs |
+| `--lr` | `1e-4` | Learning rate |
 | `--num_workers` | `4` | DataLoader workers |
-| `--encoder_dim` | `768` | BioMedCLIP output dimension |
-| `--vocab_size` | `30522` | Vocabulary size |
-| `--max_answer_len` | `16` | Max generated answer token length |
-| `--loss_alpha` | `0.5` | Weight for Yes/No BCE loss |
-| `--loss_beta` | `0.5` | Weight for generative CE loss |
+| `--encoder_dim` | `768` | BioMedCLIP feature dim |
+| `--vocab_size` | `32128` | T5-base vocabulary size |
+| `--max_answer_len` | `16` | Max generated answer length |
+| `--loss_alpha` | `1.0` | Yes/No BCE weight |
+| `--loss_beta` | `0.5` | Generative CE weight |
+| `--early_stopping` | `3` | Stop if val Y/N does not improve for N epochs (0 disables) |
 | `--device` | auto | `cuda` or `cpu` |
-
----
-
-## Logging
-
-All runs log to both the **console** and a **file** under `--log_dir`.  
-Using the same `--log_name` for train and test appends both into one file:
-
-```
-logs/
-└── pathvqa_run1.log   ← training epochs + test results in one file
-```
-
-Log format:
-```
-2026-03-10 12:00:00 | INFO     | Training started
-2026-03-10 12:00:01 | INFO     | Dataset     : flaviagiammarino/path-vqa
-2026-03-10 12:00:01 | INFO     | Trainable params : 12,450,816 / 3,871,200,256
-2026-03-10 12:05:32 | INFO     | Epoch 01/20 | Loss 0.6821 | Val Y/N Acc 0.7134 | Val BLEU 0.2310
-...
-2026-03-10 14:22:11 | INFO     | Test Set Results
-2026-03-10 14:22:11 | INFO     | Yes/No  Accuracy : 0.8021  (3208/4000)
-2026-03-10 14:22:11 | INFO     | Open    BLEU-1   : 0.3140
-2026-03-10 14:22:11 | INFO     | Open    Exact    : 0.2876  (1150/4000)
-```
 
 ---
 
@@ -191,11 +156,11 @@ Log format:
 
 | Component | Details |
 |-----------|---------|
-| Vision encoder | ViT-B/16 (via BioMedCLIP) — **frozen** |
-| Text encoder | PubMedBERT (via BioMedCLIP) — **frozen** |
-| Dual Gating | 2× CrossAttention (8 heads, dim=768) |
-| Input projection | Linear(768 → 3072) |
-| Decoder | Phi-3 Mini 4K + LoRA (r=16, α=32) |
-| Yes/No head | Linear(3072 → 1) + BCEWithLogitsLoss |
-| Generative head | Linear(3072 → vocab\_size) + CrossEntropyLoss |
+| Vision encoder | ViT-B/16 via BioMedCLIP (frozen) |
+| Text encoder | PubMedBERT via BioMedCLIP (frozen) |
+| Dual Gating | 2x cross-attention (8 heads, dim=768) |
+| Decoder | T5-base (`T5ForConditionalGeneration`) |
+| Input projection | Optional Linear(encoder_dim -> 768) if dim mismatch |
+| Yes/No head | Linear(768 -> 1) + BCEWithLogitsLoss |
+| Generative head | T5 LM head + CE loss |
 | Optimizer | AdamW + CosineAnnealingLR |
