@@ -79,6 +79,27 @@ nltk.download("punkt")
 
 ---
 
+## Run Without HF Token
+
+You can run this project without `HF_TOKEN` for public models/datasets.
+
+- Default behavior now hides unauthenticated HF warnings.
+- Add `--hf_cache_dir ./hf_cache` to reuse local cache.
+- Add `--hf_timeout 120` (or lower/higher) to control hub request timeout.
+- Add `--hf_offline` to force fully offline mode (cache must already exist).
+- Add `--show_hf_warnings` if you want to see HF hub warnings/logs.
+
+Example:
+
+```bash
+python train.py \
+  --dataset flaviagiammarino/path-vqa \
+  --hf_cache_dir ./hf_cache \
+  --hf_timeout 120
+```
+
+---
+
 ## Datasets
 
 | Dataset | HuggingFace ID | Split used |

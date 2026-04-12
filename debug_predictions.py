@@ -9,6 +9,7 @@ from config import get_args
 from model import MedicalVQAModel
 from dataset import MedicalVQADataset
 from utils import load_checkpoint
+from hf_runtime import configure_hf_runtime
 
 
 def analyze_predictions(args, num_samples: int = 200):
@@ -18,6 +19,7 @@ def analyze_predictions(args, num_samples: int = 200):
         args: CLI arguments
         num_samples: Number of test samples to analyze (default 200)
     """
+    configure_hf_runtime(args)
     device = args.device
 
     # ── Model ──────────────────────────────────────────────────────
@@ -39,7 +41,12 @@ def analyze_predictions(args, num_samples: int = 200):
 
     # ── Dataset ────────────────────────────────────────────────────
     ds = load_dataset(args.dataset)
-    test_split = ds.get("test", ds.get("validation"))
+    test_split = ds.get("test") or ds.get("validation") or ds.get("val")
+    if test_split is None:
+        raise ValueError(
+            f"Dataset '{args.dataset}' has no 'test', 'validation', or 'val' split. "
+            f"Available splits: {list(ds.keys())}"
+        )
     
     # Limit to first N samples for analysis
     limited_data = test_split.select(range(min(num_samples, len(test_split))))
@@ -157,8 +164,12 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", default="flaviagiammarino/path-vqa")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--encoder_dim", type=int, default=768)
-    parser.add_argument("--vocab_size", type=int, default=30522)
+    parser.add_argument("--vocab_size", type=int, default=32128)
     parser.add_argument("--max_answer_len", type=int, default=16)
+    parser.add_argument("--hf_cache_dir", type=str, default=None)
+    parser.add_argument("--hf_offline", action="store_true")
+    parser.add_argument("--hf_timeout", type=int, default=120)
+    parser.add_argument("--show_hf_warnings", action="store_true")
     parser.add_argument("--num_samples", type=int, default=200, 
                        help="Number of test samples to analyze")
     

@@ -1,4 +1,5 @@
 import argparse
+import os
 import torch
 
 
@@ -55,7 +56,25 @@ def get_args():
     parser.add_argument("--batch_size",  type=int,   default=16)
     parser.add_argument("--epochs",      type=int,   default=10)
     parser.add_argument("--lr",          type=float, default=1e-4)
-    parser.add_argument("--num_workers", type=int,   default=4)
+    parser.add_argument("--num_workers", type=int,   default=0 if os.name == "nt" else 4)
+
+    # ── Hugging Face runtime ──────────────────────────────────────
+    parser.add_argument(
+        "--hf_cache_dir", type=str, default=None,
+        help="Optional cache directory for HF models/datasets"
+    )
+    parser.add_argument(
+        "--hf_offline", action="store_true",
+        help="Run in offline mode (requires models/datasets already cached)"
+    )
+    parser.add_argument(
+        "--hf_timeout", type=int, default=120,
+        help="HF hub network timeout in seconds"
+    )
+    parser.add_argument(
+        "--show_hf_warnings", action="store_true",
+        help="Show Hugging Face hub warnings/logs (default: hidden)"
+    )
 
     # ── Model ──────────────────────────────────────────────────────
     parser.add_argument("--encoder_dim",    type=int, default=768)

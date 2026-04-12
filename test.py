@@ -9,6 +9,7 @@ from dataset import MedicalVQADataset
 from utils import load_checkpoint
 from logger import setup_logger
 from metrics import evaluate_medical_vqa
+from hf_runtime import configure_hf_runtime
 
 
 def evaluate_test(args):
@@ -24,6 +25,7 @@ def evaluate_test(args):
     same log file produced by train.py.
     """
     logger = setup_logger(args.log_dir, args.log_name)
+    configure_hf_runtime(args)
     device = args.device
 
     logger.info("=" * 60)
@@ -46,9 +48,11 @@ def evaluate_test(args):
 
     # ── Tokenizer ──────────────────────────────────────────────────
     # T5 tokenizer matches the decoder vocabulary (answers encoded by dataset)
+    logger.info("Loading tokenizer...")
     t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
 
     # ── Dataset ────────────────────────────────────────────────────
+    logger.info("Loading dataset from Hugging Face...")
     ds = load_dataset(args.dataset)
     test_split = ds.get("test") or ds.get("validation") or ds.get("val")
     if test_split is None:

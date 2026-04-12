@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
 from config import get_args, DatasetConfig
+from hf_runtime import configure_hf_runtime
 
 
 transform = transforms.Compose([
@@ -80,6 +81,7 @@ def build_dataloaders(batch_size: int, dataset_id: str = None):
 
 def main():
     config = get_args()
+    configure_hf_runtime(config)
     train_dataset, _, _, _, _, _ = build_dataloaders(
         batch_size=config.batch_size,
         dataset_id=config.dataset

@@ -8,10 +8,12 @@ from loss import compute_loss
 from utils import save_checkpoint
 from evaluate import evaluate
 from logger import setup_logger
+from hf_runtime import configure_hf_runtime
 
 
 def train(args):
     logger = setup_logger(args.log_dir, args.log_name)
+    configure_hf_runtime(args)
     device = args.device
 
     logger.info("=" * 60)
@@ -26,7 +28,9 @@ def train(args):
     logger.info("=" * 60)
 
     # ── Data ────────────────────────────────────────────────────────
+    logger.info("Loading dataset from Hugging Face...")
     ds = load_dataset(args.dataset)
+    logger.info("Dataset loaded.")
 
     if "train" not in ds:
         raise ValueError(
@@ -72,11 +76,13 @@ def train(args):
     logger.info(f"Validation source split : {val_source}")
 
     # ── Model ────────────────────────────────────────────────────────
+    logger.info("Loading model components (BioMedCLIP + T5)...")
     model = MedicalVQAModel(
         encoder_dim=args.encoder_dim,
         vocab_size=args.vocab_size,
         max_answer_len=args.max_answer_len
     ).to(device)
+    logger.info("Model loaded.")
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total     = sum(p.numel() for p in model.parameters())
