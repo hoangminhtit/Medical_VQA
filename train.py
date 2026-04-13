@@ -1,4 +1,6 @@
+import os
 import torch
+import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from datasets import load_dataset
 from config import get_args
@@ -55,8 +57,8 @@ def train(args):
         val_split = split_ds["test"]
         val_source = "train[10% split]"
 
-    train_dataset = MedicalVQADataset(train_split)
-    val_dataset = MedicalVQADataset(val_split)
+    train_dataset = MedicalVQADataset(train_split, max_answer_len=args.max_answer_len)
+    val_dataset = MedicalVQADataset(val_split, max_answer_len=args.max_answer_len)
 
     train_loader = DataLoader(
         train_dataset,
@@ -102,6 +104,7 @@ def train(args):
     # ── Training loop ────────────────────────────────────────────────
     best_yn_acc = 0.0
     no_improve_count = 0
+    epoch_losses = []
 
     for epoch in range(args.epochs):
 
@@ -134,6 +137,7 @@ def train(args):
             total_loss += loss.item()
 
         avg_loss = total_loss / len(train_loader)
+        epoch_losses.append(avg_loss)
         metrics  = evaluate(model, val_loader, device)
 
         # Enhanced logging with comprehensive BLEU metrics
@@ -172,6 +176,20 @@ def train(args):
                 break
 
     logger.info("Training complete.")
+
+    if epoch_losses:
+        log_name = args.log_name or "loss_curve"
+        plot_path = os.path.join(args.log_dir, f"{log_name}_loss.png")
+        plt.figure(figsize=(6, 4))
+        plt.plot(range(1, len(epoch_losses) + 1), epoch_losses, marker="o")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("Training Loss")
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_path, dpi=150)
+        plt.close()
+        logger.info(f"Loss curve saved to: {plot_path}")
 
 
 if __name__ == "__main__":

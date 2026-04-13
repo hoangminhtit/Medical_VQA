@@ -60,7 +60,7 @@ def evaluate_test(args):
             f"Dataset '{args.dataset}' has no 'test', 'validation', or 'val' split. "
             f"Available splits: {list(ds.keys())}"
         )
-    test_ds    = MedicalVQADataset(test_split)
+    test_ds    = MedicalVQADataset(test_split, max_answer_len=args.max_answer_len)
 
     test_loader = DataLoader(
         test_ds,

@@ -50,7 +50,7 @@ def analyze_predictions(args, num_samples: int = 200):
     
     # Limit to first N samples for analysis
     limited_data = test_split.select(range(min(num_samples, len(test_split))))
-    test_ds = MedicalVQADataset(limited_data)
+    test_ds = MedicalVQADataset(limited_data, max_answer_len=args.max_answer_len)
 
     test_loader = DataLoader(
         test_ds, batch_size=8, num_workers=0  # Small batch, no workers for debug

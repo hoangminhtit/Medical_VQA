@@ -87,13 +87,13 @@ def get_args():
         help="Weight for Yes/No BCE loss"
     )
     parser.add_argument(
-        "--loss_beta", type=float, default=0.5,
+        "--loss_beta", type=float, default=1.5,
         help="Weight for generative CE loss (now enabled for T5 training)"
     )
 
     # ── Early stopping ─────────────────────────────────────────────
     parser.add_argument(
-        "--early_stopping", type=int, default=3,
+        "--early_stopping", type=int, default=5,
         help="Stop training if val Y/N acc has not improved for this many epochs (0 = disabled)"
     )
 

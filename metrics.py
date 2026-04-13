@@ -71,17 +71,20 @@ class BLEUEvaluator:
             smoothing_function=self.smoother.method1
         )
         
-        # Calculate brevity penalty
+        # Calculate brevity penalty (reference length vs candidate length)
         c = sum(len(hyp) for hyp in self.all_hypotheses)      # Candidate length
         r = sum(len(ref[0]) for ref in self.all_references)   # Reference length
         bp = brevity_penalty(r, c)
-        
-        # Composite BLEU score (geometric mean with brevity penalty)
+
+        # Composite BLEU score (match sample code logic)
         bleu_scores = [bleu1, bleu2, bleu3, bleu4]
-        eps = 1e-12
-        composite_bleu = bp * math.exp(
-            sum(math.log(max(score, eps)) for score in bleu_scores) / 4.0
-        )
+        valid_bleu_scores = [score for score in bleu_scores if score > 0]
+        if valid_bleu_scores:
+            composite_bleu = bp * math.exp(
+                sum(math.log(score) for score in valid_bleu_scores) / len(valid_bleu_scores)
+            )
+        else:
+            composite_bleu = 0.0
         
         return {
             "bleu1": bleu1,
@@ -222,6 +225,8 @@ def evaluate_medical_vqa(
     model.eval()
     metrics = MedicalVQAMetrics()
     
+    debug_printed = False
+
     with torch.no_grad():
         for batch in dataloader:
             images = batch["image"].to(device)
@@ -243,17 +248,24 @@ def evaluate_medical_vqa(
             # Open-ended evaluation  
             open_mask = ~is_yn
             if open_mask.any():
+                generated_ids_cpu = generated_ids.cpu()
                 open_mask_cpu = open_mask.cpu()
+
                 # Decode predictions
                 pred_texts = t5_tokenizer.batch_decode(
-                    generated_ids[open_mask].cpu(), skip_special_tokens=True
+                    generated_ids_cpu[open_mask_cpu], skip_special_tokens=True
                 )
-                
-                # Decode ground truth  
+
+                # Decode ground truth
                 gt_texts = t5_tokenizer.batch_decode(
                     gen_lbl[open_mask_cpu], skip_special_tokens=True
                 )
-                
+
+                if verbose and not debug_printed and pred_texts:
+                    print(f"[DEBUG] Sample prediction: '{pred_texts[0]}'")
+                    print(f"[DEBUG] Sample ground truth: '{gt_texts[0]}'")
+                    debug_printed = True
+
                 metrics.add_openended_batch(gt_texts, pred_texts)
     
     # Compute final metrics

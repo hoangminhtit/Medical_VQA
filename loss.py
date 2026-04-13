@@ -40,11 +40,23 @@ def compute_loss(
     if gen_logits is None or is_dummy_logits:
         loss_gen = torch.tensor(0.0, device=yesno_logits.device)
     else:
-        # Real generation training
-        # Reshape for cross-entropy: (B*L, vocab_size) and (B*L,)
-        gen_logits_flat = gen_logits.view(-1, gen_logits.size(-1))  # (B*L, vocab_size)
-        gen_labels_flat = gen_labels.view(-1)                       # (B*L,)
-        
-        loss_gen = ce(gen_logits_flat, gen_labels_flat)
+        # Real generation training (open-ended only)
+        if is_yesno is not None:
+            is_yesno = is_yesno.to(device=gen_logits.device, dtype=torch.bool)
+            open_mask = ~is_yesno
+        else:
+            open_mask = None
+
+        if open_mask is None or open_mask.any():
+            if open_mask is not None:
+                gen_logits = gen_logits[open_mask]
+                gen_labels = gen_labels[open_mask]
+
+            # Reshape for cross-entropy: (B*L, vocab_size) and (B*L,)
+            gen_logits_flat = gen_logits.view(-1, gen_logits.size(-1))  # (B*L, vocab_size)
+            gen_labels_flat = gen_labels.view(-1)                       # (B*L,)
+            loss_gen = ce(gen_logits_flat, gen_labels_flat)
+        else:
+            loss_gen = torch.tensor(0.0, device=gen_logits.device)
 
     return alpha * loss_yesno + beta * loss_gen

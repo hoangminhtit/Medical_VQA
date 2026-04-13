@@ -10,7 +10,7 @@ class MedicalVQADataset(Dataset):
     _MEAN = (0.48145466, 0.4578275,  0.40821073)
     _STD  = (0.26862954, 0.26130258, 0.27577711)
 
-    def __init__(self, data, image_folder=None):
+    def __init__(self, data, image_folder=None, max_answer_len: int = 16):
         """
         Args:
             data        : list of dicts OR HuggingFace Dataset.
@@ -22,6 +22,7 @@ class MedicalVQADataset(Dataset):
         """
         self.data         = data
         self.image_folder = image_folder
+        self.max_answer_len = max_answer_len
 
         # Use BioMedCLIP tokenizer for questions (needed for encoder)
         self.question_tokenizer = AutoTokenizer.from_pretrained(
@@ -67,15 +68,18 @@ class MedicalVQADataset(Dataset):
 
         # ── Answer labels ───────────────────────────────────────────
         answer     = sample["answer"]
-        yn_flag    = self.is_yesno(answer)
-        yn_label   = 1 if (yn_flag and answer.strip().lower() == "yes") else 0
+        yn_flag = self.is_yesno(answer)
+        if yn_flag:
+            yn_label = 1 if answer.strip().lower() == "yes" else 0
+        else:
+            yn_label = -1
 
         # Use T5 tokenizer for answer labels to match T5 decoder vocabulary
         gen_tokens = self.answer_tokenizer(
             answer,
             padding="max_length",
             truncation=True,
-            max_length=16,
+            max_length=self.max_answer_len,
             return_tensors="pt"
         )
         gen_label = gen_tokens["input_ids"].squeeze(0)  # (16,)
