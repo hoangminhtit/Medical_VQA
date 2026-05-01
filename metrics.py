@@ -236,8 +236,8 @@ def evaluate_medical_vqa(
             is_yn = batch["is_yesno"].to(device=device, dtype=torch.bool)
             gen_lbl = batch["answer"]  # CPU for decoding
             
-            # Model predictions (single encoder/gating pass)
-            yesno_logits, generated_ids = model(images, input_ids, mask, generate_text=None)
+            # Model predictions (single encoder/gating pass, eval_mode shares encoder)
+            yesno_logits, generated_ids = model(images, input_ids, mask, eval_mode=True)
             
             # Yes/No evaluation
             if is_yn.any():
@@ -257,8 +257,11 @@ def evaluate_medical_vqa(
                 )
 
                 # Decode ground truth
+                # Replace -100 (ignore index set by dataset) back to pad_id before decoding
+                gt_for_decode = gen_lbl[open_mask_cpu].clone()
+                gt_for_decode[gt_for_decode == -100] = t5_tokenizer.pad_token_id
                 gt_texts = t5_tokenizer.batch_decode(
-                    gen_lbl[open_mask_cpu], skip_special_tokens=True
+                    gt_for_decode, skip_special_tokens=True
                 )
 
                 if verbose and not debug_printed and pred_texts:

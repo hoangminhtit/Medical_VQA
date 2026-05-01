@@ -82,7 +82,12 @@ class MedicalVQADataset(Dataset):
             max_length=self.max_answer_len,
             return_tensors="pt"
         )
-        gen_label = gen_tokens["input_ids"].squeeze(0)  # (16,)
+        gen_label = gen_tokens["input_ids"].squeeze(0)  # (max_answer_len,)
+
+        # Replace padding with -100 (PyTorch ignore_index convention).
+        # CE loss will skip these positions; keeps real token_id=0 safe.
+        pad_id = self.answer_tokenizer.pad_token_id  # 0 for T5
+        gen_label = gen_label.masked_fill(gen_label == pad_id, -100)
 
         return {
             "image"         : image,

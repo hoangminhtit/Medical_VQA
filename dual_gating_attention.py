@@ -36,8 +36,8 @@ class DualGatingModule(nn.Module):
         # CLS token for image
         v_cls = V[:, 0]
 
-        # pooled question
-        q = Q.mean(dim=1)
+        # CLS token for question (BERT-style, avoids noise from padding tokens)
+        q = Q[:, 0]
 
         # Gate 1 : Text -> Image
         g1 = self.sigmoid(self.gate1(q)).unsqueeze(1)

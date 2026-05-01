@@ -175,11 +175,13 @@ class MedicalVQAModel(nn.Module):
         fused_mask = torch.cat([v_mask, attention_mask], dim=1)
         return fused, fused_mask
 
-    def forward(self, images, input_ids, attention_mask, labels=None, generate_text: bool = False):
+    def forward(self, images, input_ids, attention_mask, labels=None,
+                generate_text: bool = False, eval_mode: bool = False):
         fused, fused_mask = self._build_fused_features(images, input_ids, attention_mask)
 
-        if generate_text is None:
+        if eval_mode:
             # Evaluation mode: run encoder/gating once, then decode both heads.
+            # Avoids double-encoding — encoder runs once, shared by both paths.
             encoder_outputs = self.decoder.encode(fused, encoder_attention_mask=fused_mask)
             cls_features = self.decoder(
                 fused,

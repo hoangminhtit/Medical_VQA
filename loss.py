@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 bce = nn.BCEWithLogitsLoss()
-ce  = nn.CrossEntropyLoss(ignore_index=0)   # Ignore padding tokens (T5 pad_token_id = 0)
+ce  = nn.CrossEntropyLoss(ignore_index=-100)  # -100 = PyTorch convention (dataset replaces pad with -100)
 
 
 def compute_loss(

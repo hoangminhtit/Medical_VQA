@@ -102,7 +102,7 @@ def train(args):
     )
 
     # ── Training loop ────────────────────────────────────────────────
-    best_yn_acc = 0.0
+    best_composite = 0.0
     no_improve_count = 0
     epoch_losses = []
 
@@ -158,16 +158,26 @@ def train(args):
             f"Brevity Penalty: {metrics['brevity_penalty']:.4f}"
         )
 
-        # Save best checkpoint based on yes/no accuracy (strict improvement).
-        if yn_acc is not None and yn_acc > best_yn_acc:
-            best_yn_acc = yn_acc
+        # ── Composite metric: 50% Y/N acc + 50% BLEU composite ────────
+        # Ensures both classification AND generation quality are
+        # considered when selecting the best checkpoint.
+        yn_acc_val = yn_acc if yn_acc is not None else 0.0
+        bleu_comp  = metrics["bleu_composite"]
+        composite  = 0.5 * yn_acc_val + 0.5 * bleu_comp
+
+        if composite > best_composite:
+            best_composite = composite
             no_improve_count = 0
             save_checkpoint(model, args.checkpoint)
-            logger.info(f"  → Checkpoint saved (best Y/N Acc {best_yn_acc:.4f})")
+            logger.info(
+                f"  → Checkpoint saved "
+                f"(composite {composite:.4f} | Y/N {yn_acc_val:.4f} | BLEU {bleu_comp:.4f})"
+            )
         else:
             no_improve_count += 1
             logger.info(
-                f"  → No improvement for {no_improve_count}/{args.early_stopping} epoch(s)"
+                f"  → No improvement for {no_improve_count}/{args.early_stopping} epoch(s) "
+                f"(composite {composite:.4f})"
             )
             if args.early_stopping > 0 and no_improve_count >= args.early_stopping:
                 logger.info(
