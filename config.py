@@ -25,7 +25,7 @@ def get_args():
             --log_name   pathvqa_run1          # <-- same name = same log file
     """
     parser = argparse.ArgumentParser(
-        description="Medical VQA — BioMedCLIP + T5"
+        description="Medical VQA — BLIP-2 ViT-L + BioBERT + T5-small"
     )
 
     # ── Dataset ────────────────────────────────────────────────────
@@ -77,9 +77,12 @@ def get_args():
     )
 
     # ── Model ──────────────────────────────────────────────────────
-    parser.add_argument("--encoder_dim",    type=int, default=768)
-    parser.add_argument("--vocab_size",     type=int, default=32128)
-    parser.add_argument("--max_answer_len", type=int, default=16)
+    parser.add_argument("--encoder_dim",        type=int, default=768)
+    parser.add_argument("--max_answer_len",      type=int, default=16)
+    parser.add_argument("--image_unfreeze_top",  type=int, default=4,
+        help="Number of top ViT-L layers to unfreeze")
+    parser.add_argument("--text_unfreeze_top",   type=int, default=3,
+        help="Number of top BioBERT layers to unfreeze")
 
     # ── Loss weights ───────────────────────────────────────────────
     parser.add_argument(

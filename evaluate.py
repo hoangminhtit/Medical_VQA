@@ -20,7 +20,7 @@ def evaluate(model, dataloader, device):
     # Use T5 tokenizer for answer decoding (matches dataset)
     global _T5_TOKENIZER
     if _T5_TOKENIZER is None:
-        _T5_TOKENIZER = T5Tokenizer.from_pretrained("t5-base")
+        _T5_TOKENIZER = T5Tokenizer.from_pretrained("t5-small")
     
     # Use comprehensive evaluation from metrics module
     results = evaluate_medical_vqa(

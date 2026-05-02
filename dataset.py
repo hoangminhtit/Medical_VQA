@@ -6,31 +6,42 @@ import torchvision.transforms as transforms
 
 
 class MedicalVQADataset(Dataset):
-    # OpenCLIP normalisation used by BioMedCLIP
+    """Medical VQA dataset.
+
+    Encoders changed:
+      - Question tokenizer: BioBERT-base (replaces BioMedCLIP PubMedBERT)
+      - Answer  tokenizer: T5-small (replaces T5-base)
+    Image preprocessing: BLIP-2 normalisation.
+    """
+
+    # BLIP-2 / ViT standard normalisation (ImageNet stats)
     _MEAN = (0.48145466, 0.4578275,  0.40821073)
     _STD  = (0.26862954, 0.26130258, 0.27577711)
+
+    # Tokenizer model IDs
+    _QUESTION_TOKENIZER = "dmis-lab/biobert-base-cased-v1.2"
+    _ANSWER_TOKENIZER   = "t5-small"
 
     def __init__(self, data, image_folder=None, max_answer_len: int = 16):
         """
         Args:
-            data        : list of dicts OR HuggingFace Dataset.
-                          Expected keys: 'image', 'question', 'answer'.
-                          'image' may be a filename (str) or a PIL Image.
-            image_folder: base folder when 'image' is a filename.
-                          Pass None (default) when using HuggingFace datasets
-                          where 'image' is already a PIL Image.
+            data           : list of dicts OR HuggingFace Dataset.
+                             Expected keys: 'image', 'question', 'answer'.
+                             'image' may be a filename (str) or a PIL Image.
+            image_folder   : base folder when 'image' is a filename.
+                             Pass None (default) when using HuggingFace datasets
+                             where 'image' is already a PIL Image.
+            max_answer_len : maximum length for T5 answer tokens.
         """
-        self.data         = data
-        self.image_folder = image_folder
+        self.data           = data
+        self.image_folder   = image_folder
         self.max_answer_len = max_answer_len
 
-        # Use BioMedCLIP tokenizer for questions (needed for encoder)
-        self.question_tokenizer = AutoTokenizer.from_pretrained(
-            "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
-        )
-        
-        # Use T5 tokenizer for answers (matches the decoder)
-        self.answer_tokenizer = T5Tokenizer.from_pretrained("t5-base")
+        # BioBERT tokenizer for questions → matches TextEncoder in feature_extraction.py
+        self.question_tokenizer = AutoTokenizer.from_pretrained(self._QUESTION_TOKENIZER)
+
+        # T5-small tokenizer for answers → matches T5Decoder in model.py
+        self.answer_tokenizer = T5Tokenizer.from_pretrained(self._ANSWER_TOKENIZER)
 
         self.transform = transforms.Compose([
             transforms.Resize((224, 224)),
@@ -48,33 +59,29 @@ class MedicalVQADataset(Dataset):
     def __getitem__(self, idx):
         sample = self.data[idx]
 
-        # ── Image ───────────────────────────────────────────────────
+        # ── Image ───────────────────────────────────────────────────────
         raw = sample["image"]
         if isinstance(raw, str):
             raw = Image.open(f"{self.image_folder}/{raw}")
         image = self.transform(raw.convert("RGB"))
 
-        # ── Tokenise question ───────────────────────────────────────
+        # ── Tokenise question (BioBERT) ──────────────────────────────────
         question = sample["question"]
         q_tokens = self.question_tokenizer(
             question,
             padding="max_length",
             truncation=True,
-            max_length=32,
+            max_length=64,          # BioBERT handles up to 512; 64 is plenty for VQA
             return_tensors="pt"
         )
-        input_ids = q_tokens["input_ids"].squeeze(0)
-        mask      = q_tokens["attention_mask"].squeeze(0)
+        input_ids = q_tokens["input_ids"].squeeze(0)       # (L,)
+        mask      = q_tokens["attention_mask"].squeeze(0)  # (L,)
 
-        # ── Answer labels ───────────────────────────────────────────
-        answer     = sample["answer"]
+        # ── Answer labels (T5-small tokenizer) ──────────────────────────
+        answer  = sample["answer"]
         yn_flag = self.is_yesno(answer)
-        if yn_flag:
-            yn_label = 1 if answer.strip().lower() == "yes" else 0
-        else:
-            yn_label = -1
+        yn_label = (1 if answer.strip().lower() == "yes" else 0) if yn_flag else -1
 
-        # Use T5 tokenizer for answer labels to match T5 decoder vocabulary
         gen_tokens = self.answer_tokenizer(
             answer,
             padding="max_length",
@@ -84,9 +91,8 @@ class MedicalVQADataset(Dataset):
         )
         gen_label = gen_tokens["input_ids"].squeeze(0)  # (max_answer_len,)
 
-        # Replace padding with -100 (PyTorch ignore_index convention).
-        # CE loss will skip these positions; keeps real token_id=0 safe.
-        pad_id = self.answer_tokenizer.pad_token_id  # 0 for T5
+        # Replace padding with -100 (PyTorch ignore_index convention)
+        pad_id    = self.answer_tokenizer.pad_token_id   # 0 for T5
         gen_label = gen_label.masked_fill(gen_label == pad_id, -100)
 
         return {

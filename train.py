@@ -78,10 +78,9 @@ def train(args):
     logger.info(f"Validation source split : {val_source}")
 
     # ── Model ────────────────────────────────────────────────────────
-    logger.info("Loading model components (BioMedCLIP + T5)...")
+    logger.info("Loading model components (BLIP-2 ViT-L + BioBERT + T5-small)...")
     model = MedicalVQAModel(
-        encoder_dim=args.encoder_dim,
-        vocab_size=args.vocab_size,
+        dim=args.encoder_dim,
         max_answer_len=args.max_answer_len
     ).to(device)
     logger.info("Model loaded.")
@@ -112,15 +111,15 @@ def train(args):
         total_loss = 0.0
 
         for batch in train_loader:
-            images    = batch["image"].to(device)
-            input_ids = batch["input_ids"].to(device)
-            mask      = batch["attention_mask"].to(device)
-            yn_lbl    = batch["yesno"].to(device)
-            is_yn     = batch["is_yesno"].to(device)
-            gen_lbl   = batch["answer"].to(device)
+            pixel_values = batch["image"].to(device)
+            input_ids    = batch["input_ids"].to(device)
+            mask         = batch["attention_mask"].to(device)
+            yn_lbl       = batch["yesno"].to(device)
+            is_yn        = batch["is_yesno"].to(device)
+            gen_lbl      = batch["answer"].to(device)
 
             yesno_logits, gen_logits = model(
-                images, input_ids, mask, labels=gen_lbl, generate_text=False
+                pixel_values, input_ids, mask, labels=gen_lbl, generate_text=False
             )
 
             loss = compute_loss(
