@@ -56,6 +56,10 @@ def get_args():
     parser.add_argument("--batch_size",  type=int,   default=16)
     parser.add_argument("--epochs",      type=int,   default=10)
     parser.add_argument("--lr",          type=float, default=1e-4)
+    parser.add_argument(
+        "--warmup_ratio", type=float, default=0.1,
+        help="Fraction of total training steps used for LR warmup"
+    )
     parser.add_argument("--num_workers", type=int,   default=0 if os.name == "nt" else 4)
 
     # ── Hugging Face runtime ──────────────────────────────────────
@@ -78,10 +82,10 @@ def get_args():
 
     # ── Model ──────────────────────────────────────────────────────
     parser.add_argument("--encoder_dim",        type=int, default=768)
-    parser.add_argument("--max_answer_len",      type=int, default=16)
-    parser.add_argument("--image_unfreeze_top",  type=int, default=4,
+    parser.add_argument("--max_answer_len",      type=int, default=24)
+    parser.add_argument("--image_unfreeze_top",  type=int, default=6,
         help="Number of top ViT-L layers to unfreeze")
-    parser.add_argument("--text_unfreeze_top",   type=int, default=3,
+    parser.add_argument("--text_unfreeze_top",   type=int, default=6,
         help="Number of top BioBERT layers to unfreeze")
 
     # ── Loss weights ───────────────────────────────────────────────

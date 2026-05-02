@@ -3,6 +3,7 @@ import torch
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from datasets import load_dataset
+from transformers import get_cosine_schedule_with_warmup
 from config import get_args
 from dataset import MedicalVQADataset
 from model import MedicalVQAModel
@@ -25,6 +26,7 @@ def train(args):
     logger.info(f"  Epochs      : {args.epochs}")
     logger.info(f"  Batch size  : {args.batch_size}")
     logger.info(f"  LR          : {args.lr}")
+    logger.info(f"  Warmup ratio: {args.warmup_ratio}")
     logger.info(f"  Loss alpha  : {args.loss_alpha}  beta: {args.loss_beta}")
     logger.info(f"  Checkpoint  : {args.checkpoint}")
     logger.info("=" * 60)
@@ -81,7 +83,9 @@ def train(args):
     logger.info("Loading model components (BLIP-2 ViT-L + BioBERT + T5-small)...")
     model = MedicalVQAModel(
         dim=args.encoder_dim,
-        max_answer_len=args.max_answer_len
+        max_answer_len=args.max_answer_len,
+        image_unfreeze_top=args.image_unfreeze_top,
+        text_unfreeze_top=args.text_unfreeze_top,
     ).to(device)
     logger.info("Model loaded.")
 
@@ -96,8 +100,11 @@ def train(args):
     )
 
     total_steps = args.epochs * len(train_loader)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=total_steps
+    warmup_steps = int(total_steps * args.warmup_ratio)
+    scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps,
     )
 
     # Gradient clipping max norm

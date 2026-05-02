@@ -37,9 +37,10 @@ def evaluate_test(args):
 
     # ── Model ──────────────────────────────────────────────────────
     model = MedicalVQAModel(
-        encoder_dim=args.encoder_dim,
-        vocab_size=args.vocab_size,
-        max_answer_len=args.max_answer_len
+        dim=args.encoder_dim,
+        max_answer_len=args.max_answer_len,
+        image_unfreeze_top=args.image_unfreeze_top,
+        text_unfreeze_top=args.text_unfreeze_top,
     ).to(device)
 
     load_checkpoint(model, args.checkpoint, map_location=device)
@@ -49,7 +50,7 @@ def evaluate_test(args):
     # ── Tokenizer ──────────────────────────────────────────────────
     # T5 tokenizer matches the decoder vocabulary (answers encoded by dataset)
     logger.info("Loading tokenizer...")
-    t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
+    t5_tokenizer = T5Tokenizer.from_pretrained("t5-small")
 
     # ── Dataset ────────────────────────────────────────────────────
     logger.info("Loading dataset from Hugging Face...")
