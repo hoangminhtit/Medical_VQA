@@ -55,7 +55,12 @@ def compute_loss(
             # Reshape for cross-entropy: (B*L, vocab_size) and (B*L,)
             gen_logits_flat = gen_logits.view(-1, gen_logits.size(-1))  # (B*L, vocab_size)
             gen_labels_flat = gen_labels.view(-1)                       # (B*L,)
-            loss_gen = ce(gen_logits_flat, gen_labels_flat)
+
+            # Guard: if ALL labels are -100 (padding), CE would return NaN
+            if (gen_labels_flat != -100).any():
+                loss_gen = ce(gen_logits_flat, gen_labels_flat)
+            else:
+                loss_gen = torch.tensor(0.0, device=gen_logits.device)
         else:
             loss_gen = torch.tensor(0.0, device=gen_logits.device)
 

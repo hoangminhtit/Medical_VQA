@@ -100,6 +100,9 @@ def train(args):
         optimizer, T_max=total_steps
     )
 
+    # Gradient clipping max norm
+    GRAD_CLIP = 1.0
+
     # ── Training loop ────────────────────────────────────────────────
     best_composite = 0.0
     no_improve_count = 0
@@ -130,6 +133,20 @@ def train(args):
 
             optimizer.zero_grad()
             loss.backward()
+
+            # ── Gradient clipping — prevents NaN explosion ──────────────
+            torch.nn.utils.clip_grad_norm_(
+                filter(lambda p: p.requires_grad, model.parameters()),
+                max_norm=GRAD_CLIP
+            )
+
+            # ── Skip update if loss is NaN ──────────────────────────────
+            if not torch.isfinite(loss):
+                logger.warning(f"  ⚠ NaN/Inf loss detected, skipping batch.")
+                optimizer.zero_grad()
+                scheduler.step()
+                continue
+
             optimizer.step()
             scheduler.step()
 

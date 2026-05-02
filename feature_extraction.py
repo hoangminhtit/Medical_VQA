@@ -35,7 +35,7 @@ class ImageEncoder(nn.Module):
 
         self.vit = Blip2VisionModel.from_pretrained(
             self._MODEL,
-            torch_dtype=torch.float16
+            torch_dtype=torch.float32  # fp32 to avoid NaN gradients in mixed-precision
         )
         self.hidden_dim = self.vit.config.hidden_size  # 1408 for ViT-L
 
@@ -63,7 +63,7 @@ class ImageEncoder(nn.Module):
         """
         outputs = self.vit(pixel_values=pixel_values, return_dict=True)
         # last_hidden_state: (B, num_patches+1, 1408) — includes CLS token
-        V = outputs.last_hidden_state.float()
+        V = outputs.last_hidden_state  # already float32
         V = self.proj(V)   # (B, num_patches+1, out_dim)
         return V
 
