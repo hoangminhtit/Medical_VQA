@@ -32,6 +32,7 @@ def evaluate_test(args):
     logger.info("Test evaluation started")
     logger.info(f"  Dataset    : {args.dataset}")
     logger.info(f"  Checkpoint : {args.checkpoint}")
+    logger.info(f"  T5 model   : {args.t5_model}")
     logger.info(f"  Device     : {device}")
     logger.info("=" * 60)
 
@@ -41,6 +42,10 @@ def evaluate_test(args):
         max_answer_len=args.max_answer_len,
         image_unfreeze_top=args.image_unfreeze_top,
         text_unfreeze_top=args.text_unfreeze_top,
+        t5_model=args.t5_model,
+        gen_num_beams=args.gen_num_beams,
+        gen_repetition_penalty=args.gen_repetition_penalty,
+        gen_no_repeat_ngram_size=args.gen_no_repeat_ngram_size,
     ).to(device)
 
     load_checkpoint(model, args.checkpoint, map_location=device)
@@ -50,7 +55,7 @@ def evaluate_test(args):
     # ── Tokenizer ──────────────────────────────────────────────────
     # T5 tokenizer matches the decoder vocabulary (answers encoded by dataset)
     logger.info("Loading tokenizer...")
-    t5_tokenizer = T5Tokenizer.from_pretrained("t5-small")
+    t5_tokenizer = T5Tokenizer.from_pretrained(args.t5_model)
 
     # ── Dataset ────────────────────────────────────────────────────
     logger.info("Loading dataset from Hugging Face...")

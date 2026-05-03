@@ -104,15 +104,26 @@ class T5Decoder(nn.Module):
     Uses proper autoregressive text generation instead of parallel prediction.
     """
 
-    def __init__(self, encoder_dim: int = 768, max_answer_len: int = 16):
+    def __init__(
+        self,
+        encoder_dim: int = 768,
+        max_answer_len: int = 16,
+        model_name: str = "t5-small",
+        gen_num_beams: int = 4,
+        gen_repetition_penalty: float = 1.2,
+        gen_no_repeat_ngram_size: int = 2,
+    ):
         super().__init__()
 
         self.model = T5ForConditionalGeneration.from_pretrained(
-            "t5-small",
+            model_name,
             torch_dtype=torch.float32
         )
         self.hidden_size = self.model.config.d_model  # 512 for T5-small
         self.max_answer_len = max_answer_len
+        self.gen_num_beams = gen_num_beams
+        self.gen_repetition_penalty = gen_repetition_penalty
+        self.gen_no_repeat_ngram_size = gen_no_repeat_ngram_size
 
         # Project fused features → T5-small hidden dim (512)
         self.input_proj = nn.Linear(encoder_dim, self.hidden_size) \
@@ -166,10 +177,10 @@ class T5Decoder(nn.Module):
                 encoder_outputs=encoder_outputs,
                 attention_mask=encoder_attention_mask,
                 max_new_tokens=self.max_answer_len,
-                num_beams=4,
+                num_beams=self.gen_num_beams,
                 do_sample=False,
-                repetition_penalty=1.2,
-                no_repeat_ngram_size=2,
+                repetition_penalty=self.gen_repetition_penalty,
+                no_repeat_ngram_size=self.gen_no_repeat_ngram_size,
                 pad_token_id=self.model.config.pad_token_id,
                 eos_token_id=self.model.config.eos_token_id,
                 return_dict_in_generate=True,
@@ -237,6 +248,10 @@ class MedicalVQAModel(nn.Module):
         max_answer_len: int = 16,
         image_unfreeze_top: int = 4,
         text_unfreeze_top: int = 3,
+        t5_model: str = "t5-small",
+        gen_num_beams: int = 4,
+        gen_repetition_penalty: float = 1.2,
+        gen_no_repeat_ngram_size: int = 2,
     ):
         super().__init__()
         self.max_answer_len = max_answer_len
@@ -253,7 +268,14 @@ class MedicalVQAModel(nn.Module):
         self.fusion = FusionProjection(dim)
 
         # ── Generative Decoder (T5-small) ────────────────────────────────
-        self.decoder = T5Decoder(encoder_dim=dim, max_answer_len=max_answer_len)
+        self.decoder = T5Decoder(
+            encoder_dim=dim,
+            max_answer_len=max_answer_len,
+            model_name=t5_model,
+            gen_num_beams=gen_num_beams,
+            gen_repetition_penalty=gen_repetition_penalty,
+            gen_no_repeat_ngram_size=gen_no_repeat_ngram_size,
+        )
         dec_dim = self.decoder.hidden_size  # 512 for T5-small
 
         # ── Yes/No Head (2-layer MLP) ────────────────────────────────────
